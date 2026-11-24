@@ -77,6 +77,7 @@ table.it textarea{min-height:44px;resize:vertical}
 #layBox .dh{padding:2px 6px;font-size:12px}
 .thumb{max-width:140px;max-height:100px;display:block;margin-top:6px;border:1px solid var(--line)}
 
+.fold{border:1px solid #d0d7d2;border-radius:10px;margin:10px 0;overflow:hidden}.fhead{display:flex;justify-content:space-between;align-items:center;gap:8px;background:#eef6f0;padding:10px;cursor:pointer;flex-wrap:wrap}.fhead small{display:block;color:#555}.fold .hrec{padding-left:10px;padding-right:6px}
 .stepnav{justify-content:flex-end;margin:14px 0 4px}.stepnav .pri{font-size:16px;padding:10px 18px}
 /* ---------- Login ---------- */
 #login{position:fixed;inset:0;z-index:9999;background:#0f3d24;display:none;align-items:center;justify-content:center;padding:18px}
@@ -1971,7 +1972,27 @@ function homeSteps(){const m=homeMode,recs=liveRecs().filter(r=>modeOf(r.schemeK
    <div id="hlist"></div>`;homeList()}
 function homeList(){const q=(($('hq')||{}).value||'').toLowerCase();const fy=curFY(),recs=liveRecs().filter(r=>modeOf(r.schemeK)===homeMode&&(!fy||recFY(r)===fy)&&[r.name,r.village,r.gat,r.billNo,r.mobile,String(r.aadhaar||'').replace(/\s/g,'')].join(' ').toLowerCase().includes(q));
   if($('hcnt'))$('hcnt').textContent=recs.length;
-  $('hlist').innerHTML=recs.length?recs.slice(0,200).map(r=>`<div class="hrec"><div><b>${e(r.name)}</b><small>${e(recFY(r))} · ${e(r.village)} · गट ${e(r.gat)} · बिल ${e(r.billNo)} · ${e((SCHEMES[r.schemeK]||{}).n||'')}${r._saved?' · जतन '+e(fD(r._saved.slice(0,10))):''}</small></div><div style="white-space:nowrap"><button onclick="homeGo('${r.id}')">✏️ उघडा / बदला</button><button class="del" onclick="recycleRec('${r.id}')">हटवा</button></div></div>`).join(''):(curFY()?'<p class="hint">आर्थिक वर्ष '+e(curFY())+' मध्ये या योजनेचा कोणताही शेतकरी जतन केलेला नाही.</p>':'<p class="hint">अजून या योजनेचा कोणताही शेतकरी जतन केलेला नाही.</p>')}
+  try{const h=$('hfy');if(h&&document.activeElement!==h)h.outerHTML=fySelect('hfy','homeList()')}catch(_){}
+  if(!recs.length){$('hlist').innerHTML=curFY()?'<p class="hint">आर्थिक वर्ष '+e(curFY())+' मध्ये या योजनेचा कोणताही शेतकरी जतन केलेला नाही.</p>':'<p class="hint">अजून या योजनेचा कोणताही शेतकरी जतन केलेला नाही.</p>';return}
+  const groups={};recs.forEach(r=>{const f=recFY(r);(groups[f]=groups[f]||[]).push(r)});
+  $('hlist').innerHTML=Object.keys(groups).sort((a,b)=>fyNum(b)-fyNum(a)).map(f=>{const g=groups[f],left=g.filter(r=>!r._drive).length,open=FOLD[f]!==false;
+    return `<div class="fold"><div class="fhead" onclick="FOLD['${f}']=!(FOLD['${f}']!==false);homeList()"><span>${open?'📂':'📁'} <b>${e(f)}</b> <small>${g.length} शेतकरी · ☁ ${g.length-left} Drive ला · ${left?'⏳ '+left+' बाकी':'✓ सर्व Drive ला'}</small></span>
+      <button class="pri" ${left?'':'disabled'} onclick="event.stopPropagation();bulkDrive(${JSON.stringify(g.filter(r=>!r._drive).map(r=>r.id)).replace(/"/g,"'")})">☁ Drive सेव्ह${left?' ('+left+')':''}</button></div>
+      ${open?g.slice(0,300).map(r=>`<div class="hrec"><div><b>${e(r.name)}</b><small>${e(r.village)} · गट ${e(r.gat)} · बिल ${e(r.billNo)}${r._saved?' · जतन '+e(fD(r._saved.slice(0,10))):''} · ${r._drive?'<span style="color:#1a7f37">☁ Drive ✓</span>':'<span style="color:#b54708">⏳ Drive बाकी</span>'}</small></div><div style="white-space:nowrap"><button onclick="homeGo('${r.id}')">✏️ उघडा / बदला</button><button class="del" onclick="recycleRec('${r.id}')">हटवा</button></div></div>`).join(''):''}</div>`}).join('')}
+const FOLD={};let bulkBusy=false;
+async function bulkDrive(ids){if(bulkBusy)return toast('आधीचे Drive सेव्ह चालू आहे');if(!SES||!apiUrl())return toast('आधी Login करा');if(!navigator.onLine)return toast('इंटरनेट नाही');
+  ids=ids.filter(id=>{const r=getRecs().find(x=>x.id===id);return r&&!r._drive&&!r._del});if(!ids.length)return toast('सर्व फाईल आधीच Drive ला आहेत');
+  ask(ids.length+' शेतकऱ्यांच्या फाईल Drive ला पाठवायच्या? (Drive ला आधी असलेल्या फाईल तशाच राहतील) प्रत्येकी १०–२० सेकंद लागतील, तोपर्यंत software बंद करू नका.',async()=>{
+    bulkBusy=true;autoSave();const keep=curId,keepD=D;let ok=0,bad=0;
+    try{for(let n=0;n<ids.length;n++){const r=getRecs().find(x=>x.id===ids[n]);if(!r||r._drive)continue;
+        D=Object.assign(defaults(),JSON.parse(JSON.stringify(r)));curId=r.id;setForm(D);buildItems();renderAll();
+        try{const pdf=await makePdf((i,t)=>toast('☁ '+(n+1)+'/'+ids.length+' · '+(r.name||'')+' · पान '+i+'/'+t));
+          const rec=getRecs().find(x=>x.id===r.id)||r;const j=await drvSend({id:r.id,fy:fyFolder(rec),fileName:drvName(rec),pdf:bytesToB64(pdf)});drvMark(r.id,j.url);ok++}
+        catch(err){bad++}}}
+    finally{bulkBusy=false;
+      if(keep){const r=getRecs().find(x=>x.id===keep);D=r?Object.assign(defaults(),JSON.parse(JSON.stringify(r))):keepD;curId=r?keep:null}else{D=keepD;curId=null}
+      setForm(D);buildItems();renderAll();try{homeList()}catch(_){}try{listRecs()}catch(_){}
+      toast('☁ '+ok+' फाईल Drive ला गेल्या'+(bad?' · ❌ '+bad+' राहिल्या – परत दाबा':''))}})}
 function homeGo(id){let k=homeMode==='pocra'?'pocra':(homeK||'pmksy');
   if(id==='cur'){}else if(id){openRec(id)}else{newRec();if(homeSys){D.sysType=homeSys==='drip'?'ठिबक सिंचन संच':'तुषार सिंचन संच';if(homeSys==='drip'){D.latType=homeSub||'inline';if(D.latType==='online'&&!/:/.test(D.latSpec||'')||D.latType==='online'&&String(D.latSpec).split(':').length>2)D.latSpec=ONLINE_SPECS[0][0];if(D.latType==='inline'&&String(D.latSpec||'').split(':').length<3)D.latSpec='16:4:30'}else D.sprType=homeSub||'mini';D.items=[];D.boqAuto=true;setForm(D);refreshLat();update()}}
   if(id!=='cur'&&id)k=D.schemeK&&modeOf(D.schemeK)===homeMode?D.schemeK:k;
